@@ -71,19 +71,15 @@ private:
     cv::Mat D_;
 
     // Checkerboard corner positions
-    std::vector<cv::Point3f> object_points_;
+    std::vector<cv::Point3f> pattern_points_;
 
-    // Robot poses: ^B T_E
-    std::vector<cv::Mat> R_base_ee_;
-    std::vector<cv::Mat> t_base_ee_;
+    // Inverted robot poses: ^G T_B
+    std::vector<cv::Mat> R_gripper_base_;
+    std::vector<cv::Mat> t_gripper_base_;
 
-    // Inverted robot poses: ^E T_B
-    std::vector<cv::Mat> R_ee_base_;
-    std::vector<cv::Mat> t_ee_base_;
-
-    // Camera measurements: ^C T_T
-    std::vector<cv::Mat> R_target_cam_;
-    std::vector<cv::Mat> t_target_cam_;
+    // Camera measurements: ^C T_P
+    std::vector<cv::Mat> R_cam_pattern_;
+    std::vector<cv::Mat> t_cam_pattern_;
 
     // Calibration result: ^B T_C
     cv::Mat R_base_cam_;

@@ -2,12 +2,9 @@
 
 EyeHandCalib::EyeHandCalib() : Node("hand_eye_calib")
 {
-    // IMPORTANT:
-    // Replace these placeholders with the camera intrinsics
-    // and distortion coefficients from the original dataset.
     K_ = (cv::Mat_<double>(3, 3) <<
-        900.0, 0.0, 640.0,
-        0.0, 900.0, 360.0,
+        900.0, 0.0, 320.0,
+        0.0, 900.0, 240.0,
         0.0, 0.0, 1.0);
 
     D_ = cv::Mat::zeros(5, 1, CV_64F);
@@ -18,13 +15,11 @@ EyeHandCalib::EyeHandCalib() : Node("hand_eye_calib")
 
 void EyeHandCalib::initializeCheckerboard()
 {
-    object_points_.clear();
-
     for (int row = 0; row < board_size_.height; ++row)
     {
         for (int col = 0; col < board_size_.width; ++col)
         {
-            object_points_.emplace_back(
+            pattern_points_.emplace_back(
                 col * square_size_,
                 row * square_size_,
                 0.0f);
@@ -34,55 +29,40 @@ void EyeHandCalib::initializeCheckerboard()
 
 void EyeHandCalib::initializeRobotPoses()
 {
-    // Original dataset transformations: ^E T_B
-    // Translation values converted from mm to m.
-
-    std::vector<cv::Mat> R_original = {
+    R_gripper_base_.resize(3);
+    R_gripper_base_[0] =
         (cv::Mat_<double>(3, 3) <<
             -0.178668,  0.983906, -0.002544,
              0.104436,  0.016394, -0.994396,
-            -0.978351, -0.177932, -0.105684),
+            -0.978351, -0.177932, -0.105684);
 
+    R_gripper_base_[1] =
         (cv::Mat_<double>(3, 3) <<
             -0.098599,  0.995124, -0.002556,
              0.114587,  0.008802, -0.993374,
-            -0.988508, -0.098238, -0.114896),
-
+            -0.988508, -0.098238, -0.114896);
+     R_gripper_base_[2] =
         (cv::Mat_<double>(3, 3) <<
              0.092825,  0.995679, -0.002556,
              0.114164, -0.013193, -0.993374,
-            -0.989116,  0.091918, -0.114896)
-    };
+            -0.989116,  0.091918, -0.114896);
 
-    std::vector<cv::Mat> t_original = {
+    t_gripper_base_.resize(3);
+    t_gripper_base_[0] = 
         (cv::Mat_<double>(3, 1) <<
             -0.525397105,
              0.907647285,
-            -0.011588263),
-
+            -0.011588263);
+    t_gripper_base_[1] = 
         (cv::Mat_<double>(3, 1) <<
             -0.285919922,
              0.937671026,
-            -0.267437553),
-
+            -0.267437553);
+    t_gripper_base_[2] = 
         (cv::Mat_<double>(3, 1) <<
              0.288350222,
              0.936404190,
-            -0.269260733)
-    };
-
-    R_base_ee_.clear();
-    t_base_ee_.clear();
-
-    // Convert ^E T_B to ^B T_E
-    for (size_t i = 0; i < R_original.size(); ++i)
-    {
-        cv::Mat R_inv = R_original[i].t();
-        cv::Mat t_inv = -R_inv * t_original[i];
-
-        R_base_ee_.push_back(R_inv);
-        t_base_ee_.push_back(t_inv);
-    }
+            -0.269260733);
 }
 
 bool EyeHandCalib::processImage(int index)
@@ -132,7 +112,7 @@ bool EyeHandCalib::processImage(int index)
     cv::Mat rvec, tvec;
 
     bool success = cv::solvePnP(
-        object_points_,
+        pattern_points_,
         corners,
         K_,
         D_,
@@ -150,56 +130,28 @@ bool EyeHandCalib::processImage(int index)
     cv::Mat R;
     cv::Rodrigues(rvec, R);
 
-    // Store ^C T_T
-    R_target_cam_.push_back(R);
-    t_target_cam_.push_back(tvec);
-
-    // Store ^B T_E directly.
-    // These transformations were already inverted
-    // in initializeRobotPoses().
-    R_ee_base_.push_back(R_base_ee_[index]);
-    t_ee_base_.push_back(t_base_ee_[index]);
+    // Store ^C T_P
+    R_cam_pattern_.push_back(R);
+    t_cam_pattern_.push_back(tvec);
 
     return true;
 }
 
 void EyeHandCalib::calibrate()
 {
-    R_ee_base_.clear();
-    t_ee_base_.clear();
-    R_target_cam_.clear();
-    t_target_cam_.clear();
-
     for (int i = 0; i < NUM_IMAGES; ++i)
     {
         if (!processImage(i))
         {
-            RCLCPP_ERROR(
-                this->get_logger(),
-                "Calibration aborted: image processing failed.");
-
+            RCLCPP_ERROR(this->get_logger(), "Image processing failed at image %i", i);
             return;
         }
     }
-
-    if (R_ee_base_.size() < 3)
-    {
-        RCLCPP_ERROR(
-            this->get_logger(),
-            "Insufficient calibration poses.");
-
-        return;
-    }
-
-    // Eye-in-hand calibration for original dataset
-    // Input:  ^B T_E and ^C T_T
-    // Output: ^E T_C
-
     cv::calibrateHandEye(
-        R_ee_base_,
-        t_ee_base_,
-        R_target_cam_,
-        t_target_cam_,
+        R_gripper_base_,
+        t_gripper_base_,
+        R_cam_pattern_,
+        t_cam_pattern_,
         R_base_cam_,
         t_base_cam_,
         cv::CALIB_HAND_EYE_PARK);
@@ -209,11 +161,9 @@ void EyeHandCalib::calibrate()
 
 void EyeHandCalib::printResults()
 {
-    std::cout << "Camera rotation relative to end effector:\n"
-              << R_base_cam_ << std::endl;
+    std::cout << "Camera rotation relative to robot base:\n" << R_base_cam_ << std::endl;
 
-    std::cout << "Camera translation relative to end effector:\n"
-              << t_base_cam_ << std::endl;
+    std::cout << "Camera translation relative to robot base:\n" << t_base_cam_ << std::endl;
 }
 
 int main(int argc, char** argv)
