@@ -1,8 +1,9 @@
 # eye_to_hand_calibration_example
 In-class example for eye-to-hand calibration
 
-*NOTE*
-Uses data from [1]. However, this dataset is intended for a hand-in-hand calibration. Results will not be physically accurate.
+**NOTE**
+
+This example uses data from [1]. However, this data is intended for a hand-in-hand calibration. Results will not be physically accurate.
 
 ## Downloading Code
 1. Navigate to examples workspace source folder: `cd ~/workspaces/examples_ws/src`
